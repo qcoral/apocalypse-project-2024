@@ -1,36 +1,39 @@
 #include "DHTesp.h"
-#include "Servo.h"
 #include <ArduinoJson.h>
 #include <ESP8266HTTPClient.h>
 #include <ESP8266WiFi.h>
 
-#define posdrop 270
-#define posup 0
-#define basetemp 24.0
+#define basehumid 90.0
 
 DHTesp dht;
-Servo boxdrop;
-
 WiFiServer server(80);
 
 // Wi-Fi configuration
 const char *ssid = "Shopify Guests";
 const char *password = "welcome2shopify";
 
-void caughtZombie() {  // handles web backend
+int motorpin = D4;
+
+void caughtZombie(float temp, float humid, bool caught) {  // handles web backend
   Serial.println("Publishing page....");
-    WiFiClient client = server.accept();
+  WiFiClient client = server.accept();
 
   String htmlPage = F("HTTP/1.1 200 OK\r\n"
+                      "Access-Control-Allow-Origin: *\r\n"
                       "Content-Type: text/html\r\n"
                       "Connection: close\r\n"  // the connection will be closed after completion of the response
                       "Refresh: 5\r\n"         // refresh the page automatically every 5 sec
                       "\r\n"
                       "<!DOCTYPE HTML>"
-                      "<html>"
-                      "caught zombie"
-                      "</html>"
-                      "\r\n");
+                      "<html>");
+  htmlPage += temp;
+  htmlPage += F(" ");
+  htmlPage += humid;
+  htmlPage += F(" ");
+  htmlPage += caught;
+  htmlPage += F("</html>"
+                "\r\n");
+
   // wait for a client (web browser) to connect
   if (client) {
     Serial.println("\n[Client connected]");
@@ -70,8 +73,8 @@ void setup() {
   String thisBoard = ARDUINO_BOARD;
   Serial.println(thisBoard);
   dht.setup(D2, DHTesp::DHT11);  // Connect DHT sensor to GPIO 17
-  boxdrop.attach(D5);
   pinMode(D7, OUTPUT);
+  pinMode(motorpin, OUTPUT);
 
   WiFi.begin(ssid, password);  // Connect to your WiFi router
   Serial.println("Connecting to WiFi");
@@ -82,17 +85,6 @@ void setup() {
   }
   Serial.println(WiFi.localIP());
   server.begin();
-}
-
-void servoControl(bool drop) {
-  if (drop) {
-    boxdrop.write(posdrop);
-    digitalWrite(D7, HIGH);
-    caughtZombie();
-  } else {
-    boxdrop.write(posup);
-    digitalWrite(D7, LOW);
-  }
 }
 
 void loop() {
@@ -106,9 +98,14 @@ void loop() {
   Serial.print(humidity, 1);
   Serial.print("\t\t");
   Serial.println(temperature, 1);
-  if (temperature > basetemp) {
-    servoControl(true);
-  } else {
-    servoControl(false);
+  if (humidity > basehumid) {
+    Serial.println("dropping!");
+    digitalWrite(motorpin, LOW);
+    digitalWrite(D7, HIGH);
+    caughtZombie(temperature, humidity, true);
+  } else if (humidity < basehumid) {
+    digitalWrite(motorpin, HIGH);
+    digitalWrite(D7, LOW);
+    caughtZombie(temperature, humidity, false);
   }
 }
